@@ -8,3 +8,5 @@ env/
 .vscode/
 .DS_Store
 snapshots/
+recordings/
+models/*.onnx
