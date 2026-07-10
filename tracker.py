@@ -73,16 +73,20 @@ class IoUTracker:
             matched_dets.add(di)
             self._merge(self.tracks[ti], detections[di])
 
-        for di, det in enumerate(detections):
-            if di in matched_dets:
-                continue
-            self.tracks.append(Track.from_detection(det, track_id=self._next_id))
-            self._next_id += 1
-
+        # Age unmatched *existing* tracks before spawning new ones so newborns
+        # are not incorrectly counted as misses on their first frame.
         for ti, track in enumerate(self.tracks):
             if ti not in matched_tracks:
                 track.misses += 1
                 track.age += 1
+
+        for di, det in enumerate(detections):
+            if di in matched_dets:
+                continue
+            newborn = Track.from_detection(det, track_id=self._next_id)
+            newborn.age = 1
+            self.tracks.append(newborn)
+            self._next_id += 1
 
         self.tracks = [t for t in self.tracks if t.misses <= self.max_misses]
         return self.tracks

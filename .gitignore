@@ -9,4 +9,12 @@ env/
 .DS_Store
 snapshots/
 recordings/
+gallery/
 models/*.onnx
+session_stats.json
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
