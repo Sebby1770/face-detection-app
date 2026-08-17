@@ -56,7 +56,13 @@ class IoUTracker:
         self.tracks: List[Track] = []
         self._next_id = 1
 
+    def reset(self) -> None:
+        """Drop all active tracks and restart deterministic ID assignment."""
+        self.tracks.clear()
+        self._next_id = 1
+
     def update(self, detections: Sequence[Detection]) -> List[Track]:
+        existing_track_count = len(self.tracks)
         pairs: List[Tuple[float, int, int]] = []
         for ti, track in enumerate(self.tracks):
             for di, det in enumerate(detections):
@@ -73,16 +79,21 @@ class IoUTracker:
             matched_dets.add(di)
             self._merge(self.tracks[ti], detections[di])
 
+        # Age only tracks that existed before this update. Previously, newly
+        # created tracks were immediately marked as missed, which hid every
+        # face on the first frame where it appeared.
+        for ti in range(existing_track_count):
+            if ti not in matched_tracks:
+                self.tracks[ti].misses += 1
+                self.tracks[ti].age += 1
+
         for di, det in enumerate(detections):
             if di in matched_dets:
                 continue
-            self.tracks.append(Track.from_detection(det, track_id=self._next_id))
+            track = Track.from_detection(det, track_id=self._next_id)
+            track.age = 1
+            self.tracks.append(track)
             self._next_id += 1
-
-        for ti, track in enumerate(self.tracks):
-            if ti not in matched_tracks:
-                track.misses += 1
-                track.age += 1
 
         self.tracks = [t for t in self.tracks if t.misses <= self.max_misses]
         return self.tracks

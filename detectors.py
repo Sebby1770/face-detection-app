@@ -34,8 +34,29 @@ class Detection:
         return (float(self.x), float(self.y), float(self.w), float(self.h))
 
 
-def find_haar_path() -> Path:
-    return Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+def find_haar_path(explicit_path: Optional[Path] = None) -> Path:
+    """Locate OpenCV's optional Haar cascade with an actionable failure."""
+    filename = "haarcascade_frontalface_default.xml"
+    if explicit_path is not None:
+        if explicit_path.is_file():
+            return explicit_path
+        raise FileNotFoundError(f"Haar cascade does not exist: {explicit_path}")
+
+    candidates = [Path(__file__).parent / "models" / filename]
+    data_module = getattr(cv2, "data", None)
+    bundled_directory = getattr(data_module, "haarcascades", None)
+    if bundled_directory:
+        candidates.append(Path(bundled_directory) / filename)
+    candidates.append(Path(cv2.__file__).parent / "data" / filename)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    raise FileNotFoundError(
+        "No Haar cascade was found in this OpenCV installation. "
+        "Install an OpenCV build that includes cascade data or pass --haar-path."
+    )
 
 
 def _valid_model(path: Path) -> bool:
