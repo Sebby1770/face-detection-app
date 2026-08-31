@@ -1,8 +1,12 @@
-# Face Privacy Redactor 2.3.1
+# Face Privacy Redactor 2.4.0
+
+**Live site:** [https://sebby1770.github.io/face-detection-app/](https://sebby1770.github.io/face-detection-app/)
 
 [github.com/Sebby1770/face-detection-app](https://github.com/Sebby1770/face-detection-app)
 
 Detect and **redact** faces in webcam feeds, still images, videos, and folders with [OpenCV](https://opencv.org/) and Python. This is a privacy tool first: saved output uses a padded solid black box by default, and diagnostic overlays never hit disk unless you ask.
+
+The GitHub Pages demo redacts a photo or camera frame in the browser (Chrome/Edge built-in face detector, or drag boxes yourself). Nothing is uploaded. Use the Python CLI for video folders, YuNet, and `--keep-ids`.
 
 Uses [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) — a fast CNN face detector — with an automatic fallback to OpenCV's bundled Haar cascade if the YuNet model can't be downloaded. The YuNet ONNX file is ~340 KB and is fetched on first run.
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.0 — 2026-08-31
+
+### Added
+- GitHub Pages demo at https://sebby1770.github.io/face-detection-app/ (Chrome/Edge FaceDetector, click-to-keep a host, drag extra boxes).
+- Browser demo: ellipse vs box, feather, drag-and-drop, HUD, keys `s`/`b`/`p`/`e`/`f`/`z`.
+
 ## 2.3.1 — 2026-08-31
 
 ### Added
