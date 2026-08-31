@@ -6,11 +6,20 @@ import argparse
 import sys
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 import cv2
 
+from analytics import SessionAnalytics
+from batch import (
+    coverage_entry,
+    coverage_totals,
+    print_coverage_summary,
+    process_tree,
+    write_coverage,
+)
 from detectors import HaarDetector, YuNetDetector, find_haar_path, find_yunet_path
 from media import (
     IMAGE_SUFFIXES,
@@ -21,6 +30,7 @@ from media import (
     media_kind,
 )
 from pipeline import (
+    MASK_SHAPES,
     REDACTION_MODES,
     FrameProcessor,
     FrameResult,
@@ -35,6 +45,19 @@ from tracker import IoUTracker
 class Recorder:
     writer: cv2.VideoWriter
     path: Path
+
+
+class SourceKind(str, Enum):
+    CAMERA = "camera"
+    IMAGE = "image"
+    VIDEO = "video"
+
+
+@dataclass
+class InputSource:
+    kind: SourceKind
+    path: Optional[Path] = None
+    camera_index: Optional[int] = None
 
 
 def positive_int(value: str) -> int:
@@ -73,12 +96,65 @@ def parse_color(value: str) -> tuple[int, int, int]:
     return blue, green, red
 
 
+def parse_id_list(value: str) -> list[int]:
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    ids: list[int] = []
+    for part in parts:
+        try:
+            ids.append(int(part))
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                "must be a comma-separated list of integers such as 1,3"
+            ) from exc
+    return ids
+
+
+def _source_from_path(path: Path) -> InputSource:
+    if not path.exists():
+        raise SystemExit(f"input does not exist: {path}")
+    if path.is_dir():
+        raise SystemExit(f"expected an image or video file, not a directory: {path}")
+    try:
+        kind = media_kind(path)
+    except MediaError as exc:
+        raise SystemExit(str(exc)) from exc
+    if kind == "image":
+        return InputSource(kind=SourceKind.IMAGE, path=path)
+    return InputSource(kind=SourceKind.VIDEO, path=path)
+
+
+def resolve_source(args: argparse.Namespace) -> InputSource:
+    """Resolve camera / image / video input from a CLI-style namespace."""
+    source_flag = getattr(args, "source_flag", None)
+    source = getattr(args, "source", None)
+    camera = getattr(args, "camera", 0)
+
+    candidate = source_flag if source_flag is not None else source
+    if candidate is not None:
+        text = str(candidate)
+        if text.isdigit():
+            return InputSource(kind=SourceKind.CAMERA, camera_index=int(text))
+        return _source_from_path(Path(candidate))
+
+    return InputSource(kind=SourceKind.CAMERA, camera_index=int(camera))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Detect and redact faces in a webcam feed, image, or video."
+        description="Detect and redact faces in a webcam feed, image, video, or directory."
     )
-    parser.add_argument("--input", type=Path, help="Image or video path; omit to use a webcam")
-    parser.add_argument("--output", type=Path, help="Write redacted image/video to this path")
+    parser.add_argument(
+        "source",
+        nargs="?",
+        type=Path,
+        help="Image, video, or directory path; alias of --input",
+    )
+    parser.add_argument(
+        "--input",
+        type=Path,
+        help="Image, video, or directory path; omit to use a webcam",
+    )
+    parser.add_argument("--output", type=Path, help="Write redacted image/video/tree to this path")
     parser.add_argument("--headless", action="store_true", help="Process without opening a window")
     parser.add_argument("--overwrite", action="store_true", help="Allow replacing an existing output")
     parser.add_argument("--camera", type=int, default=0, help="Webcam index when --input is omitted")
@@ -109,6 +185,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compatibility shortcut for --redaction blur",
     )
     redaction.add_argument(
+        "--pixelate",
+        dest="redaction",
+        action="store_const",
+        const="pixelate",
+        help="Compatibility shortcut for --redaction pixelate",
+    )
+    redaction.add_argument(
         "--no-redaction",
         action="store_true",
         help="Explicitly disable privacy redaction",
@@ -128,9 +211,69 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pixel-size", type=positive_int, default=14)
     parser.add_argument("--solid-color", type=parse_color, default=(0, 0, 0), metavar="#RRGGBB")
     parser.add_argument(
+        "--mask",
+        choices=MASK_SHAPES,
+        default="box",
+        help="Redaction mask shape (default: box)",
+    )
+    parser.add_argument(
+        "--feather",
+        type=nonnegative_int,
+        default=0,
+        help="Soft-edge blur in pixels applied to the redaction mask (default: 0)",
+    )
+    parser.add_argument(
+        "--min-size",
+        type=nonnegative_int,
+        default=0,
+        help="Ignore detections smaller than this width or height in pixels (default: 0)",
+    )
+    parser.add_argument(
+        "--redact-ids",
+        type=parse_id_list,
+        default=None,
+        metavar="IDS",
+        help="Only redact these track IDs (comma-separated, e.g. 1,3)",
+    )
+    parser.add_argument(
+        "--keep-ids",
+        type=parse_id_list,
+        default=None,
+        metavar="IDS",
+        help="Leave these track IDs unredacted (comma-separated; wins over --redact-ids)",
+    )
+    parser.add_argument(
         "--overlays",
         action="store_true",
         help="Include boxes, landmarks, IDs, and confidence labels in saved output",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Show boxes, landmarks, IDs, and pose in the preview window only",
+    )
+    parser.add_argument(
+        "--pose",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Draw head-pose yaw (default: on with --review). Saved only with --overlays.",
+    )
+    parser.add_argument(
+        "--export-stats",
+        type=Path,
+        metavar="PATH",
+        help="Write session analytics JSON to this path",
+    )
+    parser.add_argument(
+        "--coverage",
+        type=Path,
+        metavar="PATH",
+        help="Write per-file coverage JSON (batch or single-file)",
+    )
+    parser.add_argument(
+        "--identify",
+        action="store_true",
+        help="Reserved for identifying exports such as face crops; this release does not write crops",
     )
     parser.add_argument("--mirror", action="store_true", help="Mirror frames before processing")
     parser.add_argument("--snapshot-dir", type=Path, default=Path("snapshots"))
@@ -139,21 +282,43 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> argparse.Namespace:
+    if args.identify:
+        parser.error(
+            "--identify is reserved; this release does not export face crops. "
+            "Use --review then --keep-ids/--redact-ids."
+        )
+
+    if args.source is not None:
+        if args.input is not None and args.input.resolve() != args.source.resolve():
+            parser.error("provide a positional path or --input, not both")
+        args.input = args.source
+
+    args.batch = False
     input_kind = None
     if args.input is not None:
-        if not args.input.is_file():
+        if args.input.is_dir():
+            if args.output is None:
+                parser.error("directory --input requires a directory --output")
+            if args.output.exists() and not args.output.is_dir():
+                parser.error("--output must be a directory when --input is a directory")
+            if args.output.exists() and args.input.resolve() == args.output.resolve():
+                parser.error("input and output directories must be different")
+            args.batch = True
+            args.headless = True
+        elif args.input.is_file():
+            try:
+                input_kind = media_kind(args.input)
+            except MediaError as exc:
+                parser.error(str(exc))
+        else:
             parser.error(f"input does not exist or is not a file: {args.input}")
-        try:
-            input_kind = media_kind(args.input)
-        except MediaError as exc:
-            parser.error(str(exc))
 
     if args.headless and args.output is None:
         parser.error("--headless requires --output so processed media is not discarded")
     if input_kind == "image" and args.max_frames is not None:
         parser.error("--max-frames applies only to video or webcam input")
 
-    if args.output is not None:
+    if args.output is not None and not args.batch:
         output_suffix = args.output.suffix.lower()
         allowed_suffixes = IMAGE_SUFFIXES if input_kind == "image" else VIDEO_OUTPUT_SUFFIXES
         if output_suffix not in allowed_suffixes:
@@ -172,6 +337,15 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = build_parser()
     return validate_args(parser, parser.parse_args(argv))
+
+
+def pose_enabled(args: argparse.Namespace) -> bool:
+    pose = getattr(args, "pose", None)
+    if pose is False:
+        return False
+    if pose is True:
+        return True
+    return bool(getattr(args, "review", False))
 
 
 def build_detector(args: argparse.Namespace):
@@ -197,6 +371,81 @@ def build_detector(args: argparse.Namespace):
     haar_path = find_haar_path(args.haar_path)
     print(f"Using Haar detector: {haar_path}")
     return HaarDetector(str(haar_path))
+
+
+def build_processor(args: argparse.Namespace, detector) -> FrameProcessor:
+    tracker = None if args.no_tracker else IoUTracker(max_misses=max(8, args.hold_frames))
+    return FrameProcessor(
+        detector,
+        tracker=tracker,
+        redaction=RedactionConfig(
+            enabled=not args.no_redaction,
+            mode=args.redaction,
+            padding=args.padding,
+            hold_frames=args.hold_frames,
+            pixel_size=args.pixel_size,
+            solid_color=args.solid_color,
+            shape=args.mask,
+            feather=args.feather,
+            min_size=args.min_size,
+        ),
+        overlays=OverlayConfig(),
+        redact_ids=args.redact_ids,
+        keep_ids=args.keep_ids,
+        min_size=args.min_size,
+    )
+
+
+def bind_session_hooks(
+    processor: FrameProcessor,
+    analytics: Optional[SessionAnalytics],
+    *,
+    draw_pose_on_output: bool,
+) -> None:
+    inner = processor.process
+
+    def process(
+        frame,
+        *,
+        include_overlays: bool = False,
+        record_analytics: bool = True,
+        **kwargs,
+    ):
+        result = inner(frame, include_overlays=include_overlays, **kwargs)
+        if analytics is not None and record_analytics:
+            analytics.update(
+                result.face_count,
+                [track.score for track in result.tracks],
+                [track.id for track in result.tracks],
+            )
+        if include_overlays and draw_pose_on_output:
+            try_draw_pose(result.frame, result.tracks)
+        return result
+
+    processor.process = process  # type: ignore[method-assign]
+
+
+_pose_import_error_emitted = False
+
+
+def try_draw_pose(frame, tracks) -> None:
+    """Draw yaw indicators when landmarks exist; never raise into the frame loop."""
+    global _pose_import_error_emitted
+    try:
+        from pose import draw_pose_indicator, estimate_yaw
+    except Exception as exc:
+        if not _pose_import_error_emitted:
+            print(f"Pose overlay unavailable ({exc}). Use --no-pose to silence this.", file=sys.stderr)
+            _pose_import_error_emitted = True
+        return
+
+    for track in tracks:
+        if len(track.landmarks) < 3:
+            continue
+        pose = estimate_yaw(track.landmarks)
+        if pose is None:
+            continue
+        draw_pose_indicator(frame, track.bbox_int, pose)
 
 
 def overlay_text(
@@ -235,6 +484,9 @@ HELP_LINES = (
     "s        save redacted snapshot",
     "r        toggle redacted recording",
     "b        toggle blur / configured mode",
+    "p        toggle pixelate / configured mode",
+    "e        toggle box / ellipse mask",
+    "f        toggle feather 0 / 8",
     "l        toggle landmark points",
     "i        toggle face ID labels",
     "m        toggle mirror",
@@ -247,24 +499,37 @@ class PreviewSession:
 
     window_name = "Face Privacy Redactor — press h for help"
 
-    def __init__(self, args: argparse.Namespace, processor: FrameProcessor) -> None:
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        processor: FrameProcessor,
+        analytics: Optional[SessionAnalytics] = None,
+    ) -> None:
         self.args = args
         self.processor = processor
+        self.analytics = analytics if analytics is not None else SessionAnalytics()
         self.mirror = args.mirror
         self.show_help = False
         self.recorder: Optional[Recorder] = None
         self._mode_before_blur = (
             processor.redaction.mode if processor.redaction.mode != "blur" else "solid"
         )
+        self._mode_before_pixelate = (
+            processor.redaction.mode if processor.redaction.mode != "pixelate" else "solid"
+        )
         self._last_frame_time = time.perf_counter()
+        self._pose_enabled = pose_enabled(args)
 
     def transform(self, frame):
         return cv2.flip(frame, 1) if self.mirror else frame
 
     def _decorate(self, result: FrameResult, stats: MediaStats) -> object:
         preview = result.frame.copy()
-        if not self.args.overlays:
+        overlays_baked = bool(getattr(self.args, "overlays", False))
+        if not overlays_baked:
             draw_tracks(preview, result.tracks, self.processor.overlays)
+            if self._pose_enabled:
+                try_draw_pose(preview, result.tracks)
 
         now = time.perf_counter()
         elapsed = max(now - self._last_frame_time, 1e-9)
@@ -272,13 +537,28 @@ class PreviewSession:
         mode = self.processor.redaction.mode if self.processor.redaction.enabled else "OFF"
         hud = [
             f"Faces: {result.face_count}  FPS: {1.0 / elapsed:5.1f}  Detector: {result.detector_name}",
-            f"Redaction: {mode.upper()}  Padding: {self.processor.redaction.padding:.0%}",
+            (
+                f"Redaction: {mode.upper()}  Padding: {self.processor.redaction.padding:.0%}  "
+                f"Mask: {self.processor.redaction.shape}"
+            ),
         ]
+        hud.extend(self.analytics.hud_lines())
+        if result.tracks:
+            ids = ",".join(
+                str(track.id) for track in sorted(result.tracks, key=lambda item: item.id)
+            )
+            hud.append(f"IDs: {ids}")
+        hold_frames = self.processor.redaction.hold_frames
+        for track in sorted(result.tracks, key=lambda item: item.id):
+            if track.misses > 0:
+                hud.append(f"hold #{track.id} {track.misses}/{hold_frames}")
+        if result.face_count == 0:
+            hud.append("NO FACE this frame")
         if self.recorder is not None:
             hud.append(f"REC - {self.recorder.path.name}")
         overlay_text(preview, hud)
         if self.show_help:
-            overlay_text(preview, HELP_LINES, x=10, y=100, color=(200, 255, 200))
+            overlay_text(preview, HELP_LINES, x=10, y=160, color=(200, 255, 200))
         return preview
 
     def _start_recording(self, result: FrameResult, fps: float) -> None:
@@ -326,6 +606,23 @@ class PreviewSession:
                 self._mode_before_blur = self.processor.redaction.mode
                 self.processor.redaction.mode = "blur"
                 self.processor.redaction.enabled = True
+        elif key == ord("p"):
+            if self.processor.redaction.mode == "pixelate":
+                self.processor.redaction.mode = self._mode_before_pixelate
+            else:
+                self._mode_before_pixelate = self.processor.redaction.mode
+                self.processor.redaction.mode = "pixelate"
+                self.processor.redaction.enabled = True
+        elif key == ord("e"):
+            if self.processor.redaction.shape == "ellipse":
+                self.processor.redaction.shape = "box"
+            else:
+                self.processor.redaction.shape = "ellipse"
+        elif key == ord("f"):
+            if self.processor.redaction.feather:
+                self.processor.redaction.feather = 0
+            else:
+                self.processor.redaction.feather = 8
         elif key == ord("l"):
             self.processor.overlays.show_landmarks = not self.processor.overlays.show_landmarks
         elif key == ord("i"):
@@ -346,11 +643,18 @@ class PreviewSession:
         """Re-run a still from its untouched source after an interactive change."""
         self.processor.reset()
         return self.processor.process(
-            self.transform(source_frame), include_overlays=self.args.overlays
+            self.transform(source_frame),
+            include_overlays=self.args.overlays,
+            record_analytics=False,
         )
 
-    def show_still(self, source_frame, stats: MediaStats) -> None:
-        result = self._process_still(source_frame)
+    def show_still(
+        self,
+        source_frame,
+        stats: MediaStats,
+        initial_result: Optional[FrameResult] = None,
+    ) -> None:
+        result = initial_result if initial_result is not None else self._process_still(source_frame)
         while True:
             cv2.imshow(self.window_name, self._decorate(result, stats))
             key = cv2.waitKey(0) & 0xFF
@@ -361,7 +665,7 @@ class PreviewSession:
                 continue
 
             self._handle_key(key, result, 1.0)
-            if key in (ord("b"), ord("l"), ord("i"), ord("m")):
+            if key in (ord("b"), ord("p"), ord("e"), ord("f"), ord("l"), ord("i"), ord("m")):
                 result = self._process_still(source_frame)
 
     def close(self) -> None:
@@ -384,33 +688,76 @@ def print_summary(stats: MediaStats, output: Optional[Path]) -> None:
     )
 
 
+def coverage_from_stats(path_label: str, kind: str, stats: MediaStats) -> dict:
+    entry = coverage_entry(path_label, kind, stats)
+    skipped: list[str] = []
+    return {
+        "files": [entry],
+        "skipped": skipped,
+        "totals": coverage_totals([entry], skipped=skipped),
+    }
+
+
+def maybe_export_reports(
+    args: argparse.Namespace,
+    analytics: SessionAnalytics,
+    coverage: Optional[dict],
+) -> None:
+    if args.export_stats is not None:
+        written = analytics.export_json(args.export_stats)
+        print(f"Wrote session stats to {written}")
+    if args.coverage is not None and coverage is not None:
+        written = write_coverage(args.coverage, coverage)
+        print(f"Wrote coverage to {written}")
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     preview: Optional[PreviewSession] = None
+    analytics = SessionAnalytics()
+    draw_pose_on_output = bool(args.overlays) and pose_enabled(args)
     try:
         detector = build_detector(args)
-        tracker = None if args.no_tracker else IoUTracker(max_misses=max(8, args.hold_frames))
-        processor = FrameProcessor(
-            detector,
-            tracker=tracker,
-            redaction=RedactionConfig(
-                enabled=not args.no_redaction,
-                mode=args.redaction,
-                padding=args.padding,
-                hold_frames=args.hold_frames,
-                pixel_size=args.pixel_size,
-                solid_color=args.solid_color,
-            ),
-            overlays=OverlayConfig(),
-        )
+
+        if args.batch:
+            def factory() -> FrameProcessor:
+                processor = build_processor(args, detector)
+                bind_session_hooks(
+                    processor, analytics, draw_pose_on_output=draw_pose_on_output
+                )
+                return processor
+
+            transform = (lambda frame: cv2.flip(frame, 1)) if args.mirror else None
+            coverage = process_tree(
+                args.input,
+                args.output,
+                factory,
+                overwrite=args.overwrite,
+                include_overlays=args.overlays,
+                frame_transform=transform,
+                max_frames=args.max_frames,
+            )
+            totals = coverage["totals"]
+            print_coverage_summary(coverage, args.output)
+            skipped_n = int(totals.get("skipped", 0))
+            if skipped_n:
+                print(
+                    f"Skipped {skipped_n} existing file(s); pass --overwrite to replace them."
+                )
+            maybe_export_reports(args, analytics, coverage)
+            return 0
+
+        processor = build_processor(args, detector)
+        bind_session_hooks(processor, analytics, draw_pose_on_output=draw_pose_on_output)
         pipeline = MediaPipeline(processor)
         if not args.headless:
-            preview = PreviewSession(args, processor)
+            preview = PreviewSession(args, processor, analytics=analytics)
 
         transform = preview.transform if preview is not None else (
             (lambda frame: cv2.flip(frame, 1)) if args.mirror else None
         )
 
+        coverage = None
         if args.input is not None and media_kind(args.input) == "image":
             still_source = None
             if preview is not None:
@@ -423,8 +770,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 include_overlays=args.overlays,
                 frame_transform=transform,
             )
+            coverage = coverage_from_stats(args.input.name, "image", stats)
             if preview is not None:
-                preview.show_still(still_source, stats)
+                preview.show_still(still_source, stats, initial_result=result)
         else:
             source = str(args.input) if args.input is not None else args.camera
             stats = pipeline.process_capture(
@@ -436,8 +784,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 requested_size=(args.width, args.height) if args.input is None else None,
                 max_frames=args.max_frames,
             )
+            kind = "video" if args.input is not None else "camera"
+            label = args.input.name if args.input is not None else f"camera:{args.camera}"
+            coverage = coverage_from_stats(label, kind, stats)
 
         print_summary(stats, args.output)
+        if coverage is not None:
+            print_coverage_summary(coverage, args.output)
+        maybe_export_reports(args, analytics, coverage)
         return 0
     except (MediaError, OSError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)

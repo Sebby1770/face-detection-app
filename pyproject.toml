@@ -1,3 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "face-detection-app"
+version = "2.3.0"
+description = "Privacy-first face redaction for images, video, and webcam"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["opencv-python>=4.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "numpy", "opencv-python-headless>=4.8"]
+
+[project.scripts]
+face-detection = "face_detection:main"
+
+[tool.setuptools]
+py-modules = [
+    "analytics",
+    "batch",
+    "detectors",
+    "download_model",
+    "face_detection",
+    "media",
+    "pipeline",
+    "pose",
+    "tracker",
+]
+
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -ra"
 testpaths = ["tests"]

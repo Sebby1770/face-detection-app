@@ -38,6 +38,7 @@ def media_kind(path: Path) -> str:
 class MediaStats:
     frames_processed: int = 0
     face_observations: int = 0
+    empty_frames: int = 0
     elapsed_seconds: float = 0.0
     tracking_enabled: bool = True
     _track_ids: set[int] = field(default_factory=set, repr=False)
@@ -47,11 +48,16 @@ class MediaStats:
         """Return stable track count, or ``None`` when IDs are frame-local."""
         return len(self._track_ids) if self.tracking_enabled else None
 
+    @property
+    def unique_id_count(self) -> int:
+        return len(self._track_ids)
+
     def observe(self, result: FrameResult) -> None:
         self.frames_processed += 1
         self.face_observations += result.face_count
-        if self.tracking_enabled:
-            self._track_ids.update(track.id for track in result.tracks if track.id > 0)
+        if result.face_count == 0:
+            self.empty_frames += 1
+        self._track_ids.update(track.id for track in result.tracks if track.id > 0)
 
 
 def _video_codec(output_path: Path) -> int:

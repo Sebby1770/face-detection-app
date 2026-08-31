@@ -3,8 +3,14 @@ import numpy as np
 import pytest
 
 from detectors import Detection
-from pipeline import FrameProcessor, RedactionConfig, expanded_bounds
-from tracker import IoUTracker
+from pipeline import (
+    FrameProcessor,
+    RedactionConfig,
+    ellipse_bounds,
+    expanded_bounds,
+    landmark_bounds,
+)
+from tracker import IoUTracker, Track
 
 
 class StaticDetector:
@@ -118,3 +124,216 @@ def test_recent_track_remains_redacted_through_a_detector_dropout():
     assert np.all(held.frame[10:20, 10:20] == 0)
     assert exposed.face_count == 0
     assert np.all(exposed.frame[10:20, 10:20] == 200)
+
+
+def test_ellipse_bounds_stretch_and_clamp():
+    assert ellipse_bounds(10, 10, 30, 30, (100, 100, 3)) == (9, 8, 31, 32)
+    assert ellipse_bounds(0, 0, 10, 10, (12, 12, 3)) == (0, 0, 11, 11)
+    assert ellipse_bounds(10, 10, 10, 20, (40, 40, 3)) == (10, 10, 10, 20)
+
+
+def test_landmark_bounds_extends_above_padded_bbox():
+    track = Track(
+        id=1,
+        bbox=(30.0, 25.0, 20.0, 20.0),
+        score=0.9,
+        landmarks=[(32.0, 10.0), (48.0, 10.0), (40.0, 28.0), (34.0, 38.0), (46.0, 38.0)],
+    )
+    x0, y0, x1, y1 = landmark_bounds(track, (60, 80, 3), 0.25)
+    padded = expanded_bounds(track.bbox, (60, 80, 3), 0.25)
+
+    assert y0 < padded[1]
+    assert y0 == 0
+    assert x0 <= padded[0]
+    assert x1 >= padded[2]
+
+
+def test_ellipse_with_landmarks_covers_pixel_above_bbox():
+    frame = patterned_frame()
+    landmarks = [(32, 10), (48, 10), (40, 28), (34, 38), (46, 38)]
+    detector = StaticDetector(
+        [Detection(30, 25, 20, 20, 0.95, landmarks=list(landmarks))]
+    )
+    box_processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(
+            mode="solid", padding=0.25, solid_color=(7, 8, 9), shape="box"
+        ),
+    )
+    ellipse_processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(
+            mode="solid", padding=0.25, solid_color=(7, 8, 9), shape="ellipse"
+        ),
+    )
+
+    box = box_processor.process(frame)
+    ellipse = ellipse_processor.process(frame)
+    solid = np.array([7, 8, 9], dtype=np.uint8)
+
+    assert np.array_equal(box.frame[5, 40], frame[5, 40])
+    assert np.array_equal(ellipse.frame[5, 40], solid)
+    assert np.array_equal(ellipse.frame[-2, -2], frame[-2, -2])
+    assert np.array_equal(ellipse.frame[:2, :2], frame[:2, :2])
+
+
+def test_ellipse_redaction_changes_roi_and_leaves_far_pixels():
+    frame = patterned_frame()
+    detector = StaticDetector([Detection(20, 10, 20, 20, 0.95)])
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(
+            mode="solid", padding=0.25, solid_color=(7, 8, 9), shape="ellipse"
+        ),
+    )
+
+    result = processor.process(frame)
+    solid = np.array([7, 8, 9], dtype=np.uint8)
+
+    assert np.array_equal(result.frame[20, 30], solid)
+    assert np.array_equal(result.frame[:2, :2], frame[:2, :2])
+    assert np.array_equal(result.frame[-2:, -2:], frame[-2:, -2:])
+    assert not np.array_equal(result.frame[5, 15], solid)
+
+
+@pytest.mark.parametrize("shape", ["box", "ellipse"])
+@pytest.mark.parametrize("feather", [0, 8])
+def test_feather_does_not_crash(shape, feather):
+    frame = patterned_frame()
+    processor = FrameProcessor(
+        StaticDetector([Detection(20, 10, 20, 20, 0.95)]),
+        redaction=RedactionConfig(shape=shape, feather=feather),
+    )
+
+    result = processor.process(frame)
+
+    assert result.frame.shape == frame.shape
+    assert result.frame.dtype == frame.dtype
+
+
+def test_keep_ids_leaves_that_track_unredacted():
+    frame = patterned_frame()
+    detector = StaticDetector(
+        [Detection(10, 10, 12, 12, 0.9), Detection(50, 10, 12, 12, 0.9)]
+    )
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
+        keep_ids={1},
+    )
+
+    result = processor.process(frame)
+
+    assert np.array_equal(result.frame[10:22, 10:22], frame[10:22, 10:22])
+    assert np.all(result.frame[10:22, 50:62] == 0)
+
+
+def test_redact_ids_only_redacts_listed_tracks():
+    frame = patterned_frame()
+    detector = StaticDetector(
+        [Detection(10, 10, 12, 12, 0.9), Detection(50, 10, 12, 12, 0.9)]
+    )
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
+    )
+
+    result = processor.process(frame, redact_ids={2})
+
+    assert np.array_equal(result.frame[10:22, 10:22], frame[10:22, 10:22])
+    assert np.all(result.frame[10:22, 50:62] == 0)
+
+
+def test_keep_ids_wins_over_redact_ids():
+    frame = patterned_frame()
+    detector = StaticDetector([Detection(10, 10, 12, 12, 0.9)])
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
+        redact_ids={1},
+        keep_ids={1},
+    )
+
+    result = processor.process(frame)
+
+    assert np.array_equal(result.frame[10:22, 10:22], frame[10:22, 10:22])
+
+
+def test_invalid_mask_shape_is_rejected():
+    with pytest.raises(ValueError, match="shape"):
+        RedactionConfig(shape="star")
+
+
+def test_negative_feather_is_rejected():
+    with pytest.raises(ValueError, match="feather"):
+        RedactionConfig(feather=-1)
+
+
+def test_min_size_drops_small_detections_so_they_are_not_redacted():
+    frame = patterned_frame()
+    detector = StaticDetector([Detection(20, 10, 10, 10, 0.95)])
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
+        min_size=30,
+    )
+
+    result = processor.process(frame)
+
+    assert result.face_count == 0
+    assert result.tracks == []
+    assert np.array_equal(result.frame, frame)
+
+
+def test_redaction_config_min_size_drops_small_detections():
+    frame = patterned_frame()
+    detector = StaticDetector([Detection(20, 10, 10, 10, 0.95)])
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(
+            mode="solid", padding=0, solid_color=(0, 0, 0), min_size=30
+        ),
+    )
+
+    result = processor.process(frame)
+
+    assert result.face_count == 0
+    assert np.array_equal(result.frame, frame)
+
+
+def test_min_size_keeps_detections_meeting_the_threshold():
+    frame = patterned_frame()
+    detector = StaticDetector([Detection(20, 10, 30, 30, 0.95)])
+    processor = FrameProcessor(
+        detector,
+        redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
+        min_size=30,
+    )
+
+    result = processor.process(frame)
+
+    assert result.face_count == 1
+    assert np.all(result.frame[10:40, 20:50] == 0)
+
+
+def test_negative_min_size_is_rejected():
+    with pytest.raises(ValueError, match="min_size"):
+        FrameProcessor(
+            StaticDetector([]),
+            redaction=RedactionConfig(),
+            min_size=-1,
+        )
+    with pytest.raises(ValueError, match="min_size"):
+        RedactionConfig(min_size=-1)
+
+
+def test_process_accepts_extra_kwargs():
+    frame = patterned_frame()
+    processor = FrameProcessor(
+        StaticDetector([Detection(20, 10, 20, 20, 0.95)]),
+        redaction=RedactionConfig(mode="solid", padding=0),
+    )
+
+    result = processor.process(frame, record_analytics=False)
+
+    assert result.face_count == 1
