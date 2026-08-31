@@ -686,6 +686,12 @@ def print_summary(stats: MediaStats, output: Optional[Path]) -> None:
         f"{stats.face_observations} face observation(s), "
         f"{tracking_summary} in {stats.elapsed_seconds:.2f}s{destination}"
     )
+    ids = stats.track_ids
+    if ids:
+        shown = ", ".join(str(track_id) for track_id in ids[:24])
+        extra = "" if len(ids) <= 24 else f" (+{len(ids) - 24} more)"
+        print(f"IDs        {shown}{extra}")
+        print("Use --review then --keep-ids / --redact-ids with those numbers.")
 
 
 def coverage_from_stats(path_label: str, kind: str, stats: MediaStats) -> dict:

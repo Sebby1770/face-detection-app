@@ -6,7 +6,8 @@ import numpy as np
 import media
 from detectors import Detection
 from media import MediaPipeline, media_kind
-from pipeline import FrameProcessor, RedactionConfig
+from pipeline import FrameProcessor, FrameResult, RedactionConfig
+from tracker import Track
 
 
 class StaticDetector:
@@ -21,6 +22,20 @@ def processor():
         StaticDetector(),
         redaction=RedactionConfig(mode="solid", padding=0, solid_color=(0, 0, 0)),
     )
+
+
+def test_print_summary_lists_track_ids(capsys):
+    import face_detection
+
+    frame = np.full((48, 64, 3), 180, dtype=np.uint8)
+    stats = media.MediaStats(tracking_enabled=True)
+    track = Track.from_detection(Detection(16, 12, 16, 16, 0.95), track_id=3)
+    stats.observe(FrameResult(frame, [track], "synthetic"))
+    face_detection.print_summary(stats, None)
+    out = capsys.readouterr().out
+    assert "IDs" in out
+    assert "3" in out
+    assert "--keep-ids" in out
 
 
 def test_image_source_to_output_pipeline(tmp_path: Path):
