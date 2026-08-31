@@ -1,4 +1,6 @@
-# Face Privacy Redactor 2.3
+# Face Privacy Redactor 2.3.1
+
+[github.com/Sebby1770/face-detection-app](https://github.com/Sebby1770/face-detection-app)
 
 Detect and **redact** faces in webcam feeds, still images, videos, and folders with [OpenCV](https://opencv.org/) and Python. This is a privacy tool first: saved output uses a padded solid black box by default, and diagnostic overlays never hit disk unless you ask.
 

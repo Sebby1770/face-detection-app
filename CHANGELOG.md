@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1 — 2026-08-31
+
+### Added
+- After a run, print the track IDs that were seen so `--keep-ids` / `--redact-ids` is guesswork-free.
+
 ## 2.3.0 — 2026-08-31
 
 ### Added

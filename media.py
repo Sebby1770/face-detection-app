@@ -52,6 +52,10 @@ class MediaStats:
     def unique_id_count(self) -> int:
         return len(self._track_ids)
 
+    @property
+    def track_ids(self) -> list:
+        return sorted(self._track_ids)
+
     def observe(self, result: FrameResult) -> None:
         self.frames_processed += 1
         self.face_observations += result.face_count
