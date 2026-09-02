@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.0 — 2026-09-02
+
+Merged **face-recognition-attendance** into this repo. One product, **Faces**:
+privacy redaction *and* local attendance.
+
+### Added
+- Unified CLI `faces redact …` and `faces attendance …` (old `face-detection` and `attendance` scripts still work).
+- Attendance package: LBPH enroll/mark, SQLite, kiosk PIN, calendar, local JSON API, Tkinter GUI.
+- Studio nav: Redact (in-tab) and Attendance (desk). GitHub Pages ships both.
+- `tests/attendance/` from the attendance suite.
+
+### Changed
+- Requires Python 3.10+ and `opencv-contrib-python` (LBPH).
+- Product version 3.0.0.
+
 ## 2.4.0 — 2026-08-31
 
 ### Added

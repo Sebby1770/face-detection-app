@@ -25,7 +25,8 @@ jobs:
       - name: Assemble static site
         run: |
           mkdir -p _site
-          cp web/index.html web/styles.css web/app.js web/404.html _site/
+          cp web/index.html web/styles.css web/app.js web/shell.js web/404.html \
+             web/attendance.html web/attendance.css web/attendance.js _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

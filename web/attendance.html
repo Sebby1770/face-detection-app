@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Faces — Attendance</title>
+    <meta name="description" content="Local attendance dashboard: roster, kiosk, calendar, streaks. Pair with faces attendance serve.">
+    <link rel="stylesheet" href="./attendance.css">
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">Faces <span>attend</span></div>
+      <nav>
+        <button data-view="dash" class="active">Dashboard</button>
+        <button data-view="students">Students</button>
+        <button data-view="kiosk">Kiosk</button>
+        <button data-view="calendar">Calendar</button>
+        <button data-view="mark">Mark</button>
+        <button data-view="records">Records</button>
+        <button data-view="weekly">Weekly</button>
+        <button data-view="holidays">Holidays</button>
+        <button data-view="alerts">Alerts</button>
+      </nav>
+      <label class="theme">Theme
+        <select id="theme">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </label>
+      <a class="gh" href="https://github.com/Sebby1770/face-detection-app">GitHub repo</a>
+    </aside>
+    <main>
+      <header class="top">
+        <h1 id="title">Dashboard</h1>
+        <p id="subtitle">Local browser demo — same workflow as the Python + OpenCV app.</p>
+      </header>
+
+      <section id="view-dash" class="view">
+        <div class="kpis" id="kpis"></div>
+        <div class="card">
+          <h2>Today</h2>
+          <div id="today-table"></div>
+        </div>
+      </section>
+
+      <section id="view-students" class="view" hidden>
+        <form id="form-student" class="card grid">
+          <h2>Add student</h2>
+          <label>Roll <input name="roll" required></label>
+          <label>Name <input name="name" required></label>
+          <label>Section <input name="section" placeholder="A"></label>
+          <label>Email <input name="email" type="email"></label>
+          <button class="btn" type="submit">Add</button>
+        </form>
+        <div id="student-cards" class="student-cards"></div>
+        <div id="student-table"></div>
+      </section>
+
+      <section id="view-kiosk" class="view" hidden>
+        <div class="kiosk card">
+          <h2>PIN kiosk</h2>
+          <p class="hint demo-banner">
+            Browser <strong>demo</strong> — PINs live in <code>localStorage</code> only
+            (the Python app stores a salted <code>scrypt</code> hash, never the raw PIN).
+            Try <strong>R1 / 1234</strong>, <strong>R2 / 2468</strong>, <strong>R3 / 13579</strong>.
+          </p>
+          <label>Roll number
+            <input id="kiosk-roll" inputmode="text" autocomplete="off" placeholder="R1">
+          </label>
+          <div class="pin-display" id="kiosk-pin-display" aria-live="polite"></div>
+          <div class="pin-pad" id="pin-pad">
+            <button type="button" data-key="1">1</button>
+            <button type="button" data-key="2">2</button>
+            <button type="button" data-key="3">3</button>
+            <button type="button" data-key="4">4</button>
+            <button type="button" data-key="5">5</button>
+            <button type="button" data-key="6">6</button>
+            <button type="button" data-key="7">7</button>
+            <button type="button" data-key="8">8</button>
+            <button type="button" data-key="9">9</button>
+            <button type="button" data-key="clr">C</button>
+            <button type="button" data-key="0">0</button>
+            <button type="button" data-key="del">⌫</button>
+          </div>
+          <label>Note (optional)
+            <input id="kiosk-note" autocomplete="off" placeholder="bus late">
+          </label>
+          <button class="btn mark" id="kiosk-mark" type="button">Mark Present</button>
+          <p class="hint" id="kiosk-msg"></p>
+        </div>
+      </section>
+
+      <section id="view-calendar" class="view" hidden>
+        <div class="row">
+          <label>From <input id="cal-from" type="date"></label>
+          <label>To <input id="cal-to" type="date"></label>
+          <button class="btn ghost" id="btn-ics" type="button">Download .ics</button>
+        </div>
+        <p class="hint">Present green · Late amber · Excused blue · Absent dark · Holiday hatch</p>
+        <div id="cal-grid"></div>
+      </section>
+
+      <section id="view-mark" class="view" hidden>
+        <form id="form-mark" class="card grid">
+          <h2>Mark attendance</h2>
+          <label>Student
+            <select name="roll" id="mark-roll"></select>
+          </label>
+          <label>Period
+            <select name="period">
+              <option>Morning</option>
+              <option>Afternoon</option>
+            </select>
+          </label>
+          <label>Status
+            <select name="status">
+              <option value="">Auto (clock)</option>
+              <option>Present</option>
+              <option>Late</option>
+              <option>Excused</option>
+            </select>
+          </label>
+          <label>Date <input name="date" type="date"></label>
+          <label>Note <input name="note" placeholder="optional"></label>
+          <button class="btn" type="submit">Mark</button>
+          <p class="hint" id="mark-msg"></p>
+        </form>
+        <div class="card">
+          <h2>Live camera (optional)</h2>
+          <p class="hint">No model in the browser — pick a student, then use the camera as a “I’m here” button.</p>
+          <video id="cam" autoplay playsinline muted></video>
+          <div class="row">
+            <button class="btn ghost" id="btn-cam">Open camera</button>
+            <button class="btn" id="btn-cam-mark">Mark selected from camera</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-records" class="view" hidden>
+        <div class="row">
+          <label>Date <input id="rec-date" type="date"></label>
+          <button class="btn ghost" id="btn-export">Export JSON</button>
+        </div>
+        <div id="rec-table"></div>
+      </section>
+
+      <section id="view-weekly" class="view" hidden>
+        <label>Week start (Monday) <input id="week-start" type="date"></label>
+        <div id="week-table"></div>
+      </section>
+
+      <section id="view-holidays" class="view" hidden>
+        <form id="form-holiday" class="card grid">
+          <h2>Add holiday</h2>
+          <label>Date <input name="date" type="date" required></label>
+          <label>Name <input name="name" value="Holiday"></label>
+          <button class="btn" type="submit">Save</button>
+        </form>
+        <div id="holiday-table"></div>
+      </section>
+
+      <section id="view-alerts" class="view" hidden>
+        <div class="card">
+          <h2>At-risk (&lt; 75%) and consecutive absences</h2>
+          <div id="alert-box"></div>
+        </div>
+      </section>
+    </main>
+    <script src="./attendance.js"></script>
+  </body>
+</html>

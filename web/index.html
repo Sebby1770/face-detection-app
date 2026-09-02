@@ -3,17 +3,22 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Face Privacy Redactor</title>
-  <meta name="description" content="Redact faces in the browser. Upload a photo or use the camera. Nothing is uploaded."/>
+  <title>Faces — redact and take attendance</title>
+  <meta name="description" content="Detect and redact faces in this tab, or open the attendance desk. Nothing is uploaded."/>
   <meta name="theme-color" content="#0c1014"/>
-  <meta property="og:title" content="Face Privacy Redactor"/>
-  <meta property="og:description" content="Detect faces, cover them, keep a host visible, download a PNG. Nothing leaves this tab."/>
+  <meta property="og:title" content="Faces"/>
+  <meta property="og:description" content="Privacy redaction plus local attendance. Detect, cover, enroll, mark present."/>
   <meta property="og:url" content="https://sebby1770.github.io/face-detection-app/"/>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230c1014'/%3E%3Crect x='8' y='11' width='16' height='10' rx='5' fill='%233dd6c6'/%3E%3C/svg%3E"/>
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
   <a class="skip" href="#stage">Skip to redactor</a>
+  <nav class="faces-nav" aria-label="Mode">
+    <strong>Faces</strong>
+    <button type="button" id="nav-redact" class="active">Redact</button>
+    <button type="button" id="nav-attendance">Attendance</button>
+  </nav>
   <div id="help" class="help" hidden>
     <article>
       <h2>Keys</h2>
@@ -24,12 +29,14 @@
     </article>
   </div>
 
+  <div id="view-redact">
   <header>
     <p class="kicker">Live on GitHub Pages · nothing is uploaded</p>
-    <h1>Face Privacy Redactor</h1>
+    <h1>Redact</h1>
     <p class="lede">
       Detect faces, cover them with a solid mask, blur, or pixelate, then download the result.
       Click a detected face to leave a host visible. Drag extra regions the detector missed.
+      Python CLI still handles video folders, YuNet, and the attendance desk.
     </p>
   </header>
 
@@ -74,13 +81,19 @@
   </main>
 
   <footer>
-    <p>Python CLI redacts video folders too: <code>python face_detection.py --input clip.mp4 --output out.mp4 --headless</code></p>
+    <p>CLI: <code>faces redact clip.mp4 --output out.mp4 --headless</code> · <code>faces attendance serve</code></p>
     <p>
       <a href="https://github.com/Sebby1770/face-detection-app">Source on GitHub</a>
       ·
       <a href="https://sebby1770.github.io/face-detection-app/">Live demo</a>
     </p>
   </footer>
+  </div>
+
+  <div id="view-attendance" hidden>
+    <iframe src="./attendance.html" title="Attendance desk"></iframe>
+  </div>
   <script src="app.js"></script>
+  <script src="shell.js"></script>
 </body>
 </html>

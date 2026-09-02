@@ -1,0 +1,220 @@
+:root {
+  --bg: #0b1220;
+  --surface: #1e293b;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --border: #334155;
+  --sidebar: #020617;
+  --primary: #3b82f6;
+  --accent: #34d399;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --heat-empty: #1e293b;
+}
+:root[data-theme="light"] {
+  --bg: #f8fafc;
+  --surface: #fff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --sidebar: #0f172a;
+  --primary: #2563eb;
+  --accent: #10b981;
+  --danger: #ef4444;
+  --warn: #f59e0b;
+  --heat-empty: #cbd5e1;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", Inter, system-ui, sans-serif;
+}
+.sidebar {
+  background: var(--sidebar);
+  color: #e2e8f0;
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.brand { font-weight: 800; padding: 8px 10px 18px; }
+.brand span { color: var(--accent); font-size: 0.8rem; }
+.sidebar nav { display: grid; gap: 4px; }
+.sidebar button {
+  background: transparent; color: inherit; border: 0; text-align: left;
+  padding: 10px 12px; border-radius: 10px; font: inherit; cursor: pointer;
+}
+.sidebar button.active, .sidebar button:hover { background: rgba(255,255,255,0.08); }
+.theme, .gh { margin-top: auto; color: #94a3b8; font-size: 0.88rem; padding: 8px; }
+.gh { color: var(--accent); text-decoration: none; }
+main { padding: 24px; }
+.top h1 { margin: 0 0 6px; }
+#subtitle { color: var(--muted); margin: 0 0 20px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+.kpi strong { display: block; font-size: 1.5rem; }
+.kpi span { color: var(--muted); font-size: 0.82rem; }
+.card, table { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.card { padding: 16px; margin: 12px 0; }
+.grid { display: grid; gap: 10px; }
+@media (min-width: 800px) { #form-student.grid, #form-mark.grid, #form-holiday.grid { grid-template-columns: repeat(2, 1fr); } .grid h2, .grid .btn, .grid .hint { grid-column: 1 / -1; } }
+label { display: grid; gap: 6px; font-weight: 600; font-size: 0.9rem; }
+input, select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+.btn {
+  background: var(--primary); color: #fff; border: 0; border-radius: 10px;
+  padding: 10px 14px; font-weight: 700; cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn.danger { background: var(--danger); }
+.row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin: 10px 0; }
+table { width: 100%; border-collapse: collapse; overflow: hidden; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.hint { color: var(--muted); }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; }
+.pill.Present { background: #064e3b; color: #6ee7b7; }
+.pill.Late { background: #78350f; color: #fcd34d; }
+.pill.Excused { background: #1e3a8a; color: #93c5fd; }
+video { width: 100%; max-width: 420px; border-radius: 12px; background: #000; }
+
+.student-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.student-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.student-card strong { display: block; }
+.student-card .meta { color: var(--muted); font-size: 0.82rem; }
+
+.kiosk { max-width: 420px; margin: 0 auto; text-align: center; }
+.kiosk label { text-align: left; }
+.kiosk input { font-size: 1.4rem; text-align: center; letter-spacing: 0.06em; }
+.demo-banner {
+  text-align: left;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.pin-display {
+  font-size: 1.8rem;
+  letter-spacing: 0.35em;
+  padding: 14px;
+  margin: 12px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  min-height: 1.5em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+.pin-pad button {
+  font-size: 1.4rem;
+  padding: 16px 0;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+}
+.pin-pad button:hover { background: var(--surface); }
+.kiosk .btn.mark { width: 100%; font-size: 1.1rem; padding: 14px; }
+
+.heatmap { overflow-x: auto; padding: 8px 0; }
+.heat-dates, .heat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.heat-label {
+  width: 180px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+.heat-cells { display: flex; gap: 3px; }
+.heat-dates { margin-left: 0; color: var(--muted); font-size: 0.65rem; }
+.heat-dates .heat-label { height: 1em; }
+.heat-dates span {
+  width: 16px;
+  text-align: center;
+  display: inline-block;
+}
+.heat {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--heat-empty);
+  flex-shrink: 0;
+}
+.heat.Present { background: #10b981; }
+.heat.Late { background: #f59e0b; }
+.heat.Excused { background: #3b82f6; }
+.heat.Holiday {
+  background: repeating-linear-gradient(
+    45deg,
+    #64748b,
+    #64748b 3px,
+    #1e293b 3px,
+    #1e293b 6px
+  );
+}
+.heat.Weekend {
+  background: repeating-linear-gradient(
+    -45deg,
+    #475569,
+    #475569 3px,
+    #1e293b 3px,
+    #1e293b 6px
+  );
+}
+
+@media (max-width: 720px) {
+  body { grid-template-columns: 1fr; }
+  .sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 10px;
+  }
+  .brand { padding: 4px 8px 4px; }
+  .sidebar nav {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 4px;
+  }
+  .sidebar button { padding: 8px 10px; font-size: 0.85rem; }
+  .theme, .gh { margin-top: 0; }
+  .heat-label { width: 110px; }
+}
